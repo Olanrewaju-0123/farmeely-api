@@ -25,7 +25,7 @@ const CreateGroups = sequelize.define(
         key:'user_id',
       },
     },
-    totalSlots: {
+    totalSlot: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },

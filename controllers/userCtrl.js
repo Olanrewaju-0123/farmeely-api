@@ -12,6 +12,7 @@ const {
   createUserValidation,
   updateUserValidation,
   createGroupValidation,
+  createLivestockValidation,
 } = require("../validations/userValidation");
 const bcrypt = require("bcrypt");
 const { TemporaryUsers } = require("../models/userTemp");
@@ -26,6 +27,7 @@ const {
   verifyPayment,
 } = require("../services/paymentGateway");
 const { Transactions } = require("../models/transactionModel");
+const NAIRA_CONVERSION = 100;
 
 const createUser = async (req, res) => {
   try {
@@ -103,6 +105,18 @@ const verifyEmail = async (req, res) => {
           location: userTemp.location,
           address: userTemp.address,
           is_email_verified: true,
+          role: "user",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { transaction: t }
+      );
+      // Create wallet for the user
+      await Wallets.create(
+        {
+          wallet_id: uuidv4(),
+          user_id: userTemp.user_id,
+          balance: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
@@ -132,7 +146,7 @@ const login = async (req, res) => {
     const credentialsMatch = await bcrypt.compare(password, user.hash);
     if (!credentialsMatch) throw new Error("Invalid email or password");
     const token = jwt.sign(
-      { _id: uuidv4(), email: email },
+      { _id: uuidv4(), email: email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
@@ -200,10 +214,13 @@ const getUser = async (req, res) => {
   }
 };
 
-const getAllLivestock = async (req, res) => {
+const getAvailableLivestocks = async (req, res) => {
   try {
     const { user_id } = req.user;
-    const livestocks = await Livestocks.findAll();
+    const livestocks = await Livestocks.findAll({
+      where: { available: true },
+      attributes: ["livestock_id", "name", "price", "weight", "description"],
+    });
     res.status(200).json({
       status: "success",
       data: livestocks,
@@ -240,113 +257,242 @@ const getSingleLivestock = async (req, res) => {
 // const createGroup = async (req, res) => {
 //   try {
 //     const { error, value } = createGroupValidation.validate(req.body);
-//     if (error) throw new Error(error.details[0].message);
-//     const { livestock_id, totalSlot, slotTaken, paymentMethod } = value;
-//     const { user_id } = req.user;
+//     if (error) {
+//       return res.status(400).json({ message: error.details[0].message });
+//     }
 
-//     // Check if slot taken is greater than total slot
+//     const { livestock_id, totalSlot, slotTaken, paymentMethod, groupName, paymentReference } = req.body;
+//     const { user_id } = req.user; // passed from the aUTH
+
+//     // Validate slot count
 //     if (slotTaken > totalSlot)
 //       throw new Error("Slot taken cannot be greater than total slot");
 
 //     // Check if livestock is available
 //     const livestock = await Livestocks.findOne({
-//       where: { livestock_id: livestock_id, available: true },
+//       where: { livestock_id, available: true },
 //     });
 //     if (livestock == null) throw new Error("Livestock not available");
 
-//     // Check if slot price is valid
+//     // Calculate slot price
 //     const totalPrice = parseFloat(livestock.price);
 //     const slotPrice = Math.ceil(totalPrice / totalSlot);
 //     const finalSlotPrice = slotPrice * slotTaken;
+
 //     if (slotPrice <= 0) throw new Error("Invalid slot price");
 
-//     // check wallet balance for wallet payment
-//     paymentReference = null
-//     if(paymentMethod === paymentMeans.WALLET) {
-//       const wallet = await Wallets.findOne({where: {user_id}})
-//       if(wallet ==null) throw new Error("wallet not found. Please set up a wallet")
+//     // let paymentReference = null;
+//     // Check wallet if payment method is WALLET
+//     if (paymentMethod === paymentMeans.WALLET) {
+//       const Transaction_ref = await debitWallet(
+//         (amount = finalSlotPrice),
+//         user_id,
+//         email,
+//         `wallet Debit for ${groupName} purchase and ${slotTaken} taken`
+//       );
+//       if (Transaction_ref == null) throw new Error("Insufficeint Balance");
+//       paymentReference = Transaction_ref;
+//     } else if (paymentMethod === paymentMeans.OTHERS) {
+//       const { paymentReference } = req.body;
+//       if (!paymentReference) throw new Error("Invalid Reference");
+//       const transaction = await checkTransactionStatus(reference); //checked if the transaction is not used yet on the system
+
+//       if (transaction != null) throw new Error("Invalid transaction");
+//       const verifyPaymentReference = await verifyPayment(reference);
+//       if (verifyPaymentReference.data.data.status != "success")
+//         throw new Error("Invalid transaction or payment failed");
+//       paymentReference = reference;
+//     } else {
+//       return res.status(400).json({ message: "Invalid payment Method" });
 //     }
-//   if(wallet.balance)
-//   } catch (error){
 
+//     // Proceed to create the group here
+
+//     const newGroup = await CreateGroups.create({
+//       livestock_id,
+//       totalSlot,
+//       slotTaken,
+//       created_by: user_id,
+//       paymentMethod,
+//       paymentReference,
+//       slotPrice,
+//       groupName,
+//       status: slotTaken === totalSlot ? "completed" : "active",
+//     });
+
+//     return res.status(201).json({
+//       message: "Group created successfully",
+//       newGroup,
+//     });
+//   } catch (error) {
+//     return res
+//       .status(500)
+//       .json({ message: error.message || "Internal server error" });
 //   }
-
 // };
 
 const createGroup = async (req, res) => {
   try {
-    const { error, value } = createGroupValidation.validate(req.body);
+    // Validate request body
+    const { error, value } = createGroupValidation(req.body);
     if (error) {
       return res.status(400).json({ message: error.details[0].message });
     }
 
-    const { livestock_id, totalSlot, slotTaken, paymentMethod, groupName } = req.body;
-    const { user_id } = req.user; // passed from the aUTH
+    const {
+      livestock_id,
+      totalSlot,
+      slotTaken,
+      paymentMethod,
+      groupName,
+      paymentReference,
+    } = req.body;
+    const { user_id, email } = req.user; // Assuming email is available in req.user
 
     // Validate slot count
-    if (slotTaken > totalSlot)
-      throw new Error("Slot taken cannot be greater than total slot");
+    if (slotTaken > totalSlot) {
+      return res
+        .status(400)
+        .json({ message: "Slot taken cannot be greater than total slot" });
+    }
 
     // Check if livestock is available
     const livestock = await Livestocks.findOne({
       where: { livestock_id, available: true },
     });
-    if (!livestock) throw new Error("Livestock not available");
+    if (!livestock) {
+      return res.status(404).json({ message: "Livestock not available" });
+    }
 
     // Calculate slot price
     const totalPrice = parseFloat(livestock.price);
     const slotPrice = Math.ceil(totalPrice / totalSlot);
     const finalSlotPrice = slotPrice * slotTaken;
 
-    if (slotPrice <= 0) throw new Error("Invalid slot price");
-
-    let paymentReference = null;
-    // Check wallet if payment method is WALLET
-    if (paymentMethod === paymentMeans.WALLET) {
-      const Transaction_ref = await debitWallet(
-        (amount = finalSlotPrice),
-        user_id,
-        email,
-        `wallet Debit for ${groupName} purchase and ${slotTaken} taken`
-      );
-      if (Transaction_ref == null) throw new Error("Insufficeint Balance");
-      paymentReference = Transaction_ref;
-    } else if (paymentMethod === paymentMeans.OTHERS) {
-      const { reference } = req.body;
-      if (!reference) throw new Error("Invalid Reference");
-      const transaction = await checkTransactionStatus(reference); //checked if the transaction is not used yet on the system
-
-      if (transaction != null) throw new Error("Invalid transaction");
-      const verifyPaymentReference = await verifyPayment(reference);
-      if (verifyPaymentReference.data.data.status != "success")
-        throw new Error("Invalid transaction or payment failed");
-      paymentReference = reference;
-    } else {
-      return res.status(400).json({ message: "Invalid payment Method" });
+    if (slotPrice <= 0) {
+      return res.status(400).json({ message: "Invalid slot price" });
     }
 
-    // Proceed to create the group here
+    let finalPaymentReference = null;
 
+    // Handle payment method
+    if (paymentMethod === paymentMeans.WALLET) {
+      // Debit wallet
+      const transactionRef = await debitWallet(
+        finalSlotPrice,
+        user_id,
+        email,
+        `Wallet Debit for ${groupName} purchase, ${slotTaken} slots`
+      );
+      if (!transactionRef) {
+        return res.status(400).json({ message: "Insufficient balance" });
+      }
+      finalPaymentReference = transactionRef;
+
+      // Save wallet transaction
+      await Transactions.create({
+        transaction_id: uuidv4(),
+        email,
+        description: `Wallet Debit for ${groupName} purchase, ${slotTaken} slots`,
+        transaction_type: "debit",
+        reference: finalPaymentReference,
+        user_id,
+        amount: finalSlotPrice,
+        status: "success",
+        payment_means: paymentMethod,
+      });
+    } else if (paymentMethod === paymentMeans.OTHERS) {
+      if (!paymentReference) {
+        // Initialize new payment
+        const paymentResponse = await initailizePayment(email, finalSlotPrice);
+        const { authorization_url, reference } = paymentResponse.data.data;
+
+        return res.status(200).json({
+          message: "Payment initialization successful",
+          paymentLink: authorization_url,
+          paymentReference: reference,
+        });
+      }
+
+      // Verify existing payment reference
+      const existingTransaction = await checkTransactionStatus(
+        paymentReference
+      );
+      if (existingTransaction) {
+        return res
+          .status(400)
+          .json({ message: "Payment reference already used" });
+      }
+
+      const verification = await verifyPayment(paymentReference);
+      if (verification.data.data.status !== "success") {
+        return res.status(400).json({ message: "Payment failed" });
+      }
+
+      // Validate payment amount
+      // const paidAmount = verification.data.data.amount / 100; // Convert from kobo
+      // if (paidAmount !== finalSlotPrice) {
+      //   return res
+      //     .status(400)
+      //     .json({ message: "Paid amount does not match expected amount" });
+      // }
+
+      finalPaymentReference = paymentReference;
+
+      // Save other transaction
+      await Transactions.create({
+        transaction_id: uuidv4(),
+        email,
+        description: `Wallet Debit for ${groupName} purchase, ${slotTaken} slots`,
+        transaction_type: "debit",
+        reference: finalPaymentReference,
+        user_id,
+        amount: finalSlotPrice,
+        status: "success",
+        payment_means: paymentMethod,
+      });
+    } else {
+      return res.status(400).json({ message: "Invalid payment method" });
+    }
+
+    // Check group name uniqueness (optional, uncomment if needed)
+    /*
+    const existingGroup = await CreateGroups.findOne({
+      where: { groupName, livestock_id },
+    });
+    if (existingGroup) {
+      return res.status(400).json({ message: "Group name already exists for this livestock" });
+    }
+    */
+
+    // Create the group
     const newGroup = await CreateGroups.create({
       livestock_id,
       totalSlot,
       slotTaken,
       created_by: user_id,
       paymentMethod,
-      paymentReference,
+      paymentReference: finalPaymentReference,
       slotPrice,
       groupName,
       status: slotTaken === totalSlot ? "completed" : "active",
     });
 
+    // Update transaction with group_id (optional, for tracking)
+    await Transactions.update(
+      { group_id: newGroup.id },
+      { where: { reference: finalPaymentReference } }
+    );
+
     return res.status(201).json({
       message: "Group created successfully",
-      newGroup,
+      group: newGroup,
     });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: error.message || "Internal server error" });
+    console.error("Error in createGroup:", error);
+    return res.status(500).json({
+      message: error.message || "Internal server error",
+    });
   }
 };
 
@@ -378,10 +524,20 @@ const completWalletFunding = async (req, res) => {
     const { user_id, email } = req.user; // passed from the Auth
     const { reference } = req.params;
 
+    console.log(
+      "Processing wallet funding for user_id:",
+      user_id,
+      "with reference:",
+      reference
+    );
+
+    // Check transaction status
     const transaction = await checkTransactionStatus(reference);
+    console.log("Transaction status check result:", transaction);
     if (transaction != null) throw new Error("invalid transaction");
 
     const response = await verifyPayment(reference);
+    console.log("Paystack verification response:", response.data);
     if (response.data.data.status != "success")
       throw new Error("Invalid transaction or payment failed");
     await sequelize.transaction(async (t) => {
@@ -398,17 +554,18 @@ const completWalletFunding = async (req, res) => {
           payment_reference: reference,
           email: email,
           description: "wallet funding",
-          transction_type: "credit",
+          transaction_type: "credit",
           payment_means: "others",
-          amount: response.data.data.amount / NAIR_CONVERSION,
-          status: "completed",
+          amount: response.data.data.amount / NAIRA_CONVERSION,
+          status: "success",
         },
         { transaction: t }
       );
       const updateAmount =
-        Number(getWallet.amount) + response.data.data.amount / NAIRA_CONVERSION;
+        Number(getWallet.balance) + response.data.data.amount / NAIRA_CONVERSION;
+        console.log("Updating wallet balance to:", updateAmount, "for user_id:", user_id);
       await Wallets.update(
-        { amount: updateAmount },
+        { balance: updateAmount },
         { where: { user_id: user_id } },
         { transaction: t }
       );
@@ -419,6 +576,7 @@ const completWalletFunding = async (req, res) => {
       message: "Wallet successfully funded",
     });
   } catch (error) {
+    console.error("Error in completWalletFunding:", error);
     res.status(400).json({
       status: "error",
       message: error.message,
@@ -428,7 +586,43 @@ const completWalletFunding = async (req, res) => {
 
 const createLivestock = async (req, res) => {
   try {
-  } catch (error) {}
+    const { error, value } = createLivestockValidation(req.body);
+    if (error)
+      return res.status(400).json({ message: error.details[0].message });
+    const { name, price, description, available, livestock_id, imageUrl } =
+      req.body;
+    const { user_id, role } = req.user;
+
+    //check if user is admin
+    if (role !== "admin")
+      return res
+        .status(400)
+        .json({ message: "Only admin can create livestock" });
+    //check if livestock with the same name already exists
+    const existingLivestock = await Livestocks.findOne({
+      where: { name: name },
+    });
+    if (existingLivestock) {
+      return res
+        .status(400)
+        .json({ message: "Livestock with the same name already exists" });
+    }
+    const newLivestock = await Livestocks.create({
+      livestock_id: uuidv4(),
+      name,
+      price,
+      description,
+      available,
+      user_id,
+      imageUrl,
+    });
+    return res.status(200).json({
+      message: "Livestock created successfully",
+      livestock: newLivestock,
+    });
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
 };
 module.exports = {
   createUser,
@@ -437,7 +631,7 @@ module.exports = {
   getUser,
   updateUser,
   getSingleLivestock,
-  getAllLivestock,
+  getAvailableLivestocks,
   createGroup,
   startWalletFunding,
   completWalletFunding,

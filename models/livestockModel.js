@@ -37,7 +37,7 @@ const Livestocks = sequelize.define(
     },
     available: {
       type: DataTypes.BOOLEAN,
-      defaultValue: true,
+      defaultValue: false,
     },
     created_at: {
       type: DataTypes.DATE,

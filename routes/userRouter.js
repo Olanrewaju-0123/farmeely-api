@@ -6,7 +6,7 @@ const {
   login,
   updateUser,
   getUser,
-  getAllLivestock,
+  getAvailableLivestocks,
   getSingleLivestock,
   createGroup,
   startWalletFunding,
@@ -22,15 +22,15 @@ router.patch("/user", authorization, updateUser);
 router.get("/user", authorization, getUser);
 
 // Get all available livestock
-router.get("/livestocks", getAllLivestock);
+router.get("/livestocks", authorization, getAvailableLivestocks);
 
 // Get a single livestock by ID
 router.get('/livestock', getSingleLivestock)
 
-router.post("/groups", createGroup)
+router.post("/groups", authorization, createGroup)
 
 // create a new livestock entry (Admin)
-router.post('/livestock', createLivestock)
+router.post('/livestock', authorization, createLivestock)
 
 // Delete a livestock entry
 // router.delete('/livestock/:id', deleteLivestock)
@@ -39,6 +39,6 @@ router.post('/livestock', createLivestock)
 router.post('/user/wallet-funding/start',authorization, startWalletFunding);
 
 // complete wallet funding
-router.post('/user/wallet-funding/start/:reference', authorization, completWalletFunding)
+router.post('/user/wallet-funding/complete/:reference', authorization, completWalletFunding)
 
 module.exports = router;

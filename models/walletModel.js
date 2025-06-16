@@ -38,9 +38,9 @@ const Wallets = sequelize.define(
         },
     },
     {
-        timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
+        timestamps: false,
+        createdAt: false,
+        updatedAt: false,
     }
 );
 

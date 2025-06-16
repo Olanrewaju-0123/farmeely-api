@@ -17,8 +17,8 @@ const connection = async () => {
     console.log("Connection has been established successfully.");
 
     app.listen(port, () => {
-    //    displayRoutes(app);
-    //  displayRoutes(app, 'route-table.log');
+      //    displayRoutes(app);
+      //  displayRoutes(app, 'route-table.log');
       console.log(`Server running on port ${port}`);
     });
   } catch (error) {

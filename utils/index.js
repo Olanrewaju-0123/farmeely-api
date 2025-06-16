@@ -31,6 +31,8 @@ const debitWallet = async (amount, user_id, email, description) => {
         where: { user_id: user_id },
         transaction: t,
       });
+
+      if (wallet == null) throw new Error("Wallet not found");
       const walletBalance = Number(wallet.balance);
       if (walletBalance - amount < 0) throw new Error("Insufficient Balance");
       const newBalance = walletBalance - amount;
