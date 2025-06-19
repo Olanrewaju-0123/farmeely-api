@@ -13,6 +13,7 @@ const {
   updateUserValidation,
   createGroupValidation,
   createLivestockValidation,
+  joinGroupValidation,
 } = require("../validations/userValidation");
 const bcrypt = require("bcrypt");
 const { TemporaryUsers } = require("../models/userTemp");
@@ -23,10 +24,11 @@ const { Livestocks } = require("../models/livestockModel");
 const { paymentMeans } = require("../enum/index");
 const { Wallets } = require("../models/walletModel");
 const {
-  initailizePayment,
   verifyPayment,
+  initializePayment,
 } = require("../services/paymentGateway");
 const { Transactions } = require("../models/transactionModel");
+const { joinGroups } = require("../models/joinGroupModel");
 const NAIRA_CONVERSION = 100;
 
 const createUser = async (req, res) => {
@@ -332,10 +334,12 @@ const getSingleLivestock = async (req, res) => {
 // };
 
 const createGroup = async (req, res) => {
+  const t = await sequelize.transaction();
   try {
     // Validate request body
     const { error, value } = createGroupValidation(req.body);
     if (error) {
+      // await t.rollback();
       return res.status(400).json({ message: error.details[0].message });
     }
 
@@ -348,9 +352,20 @@ const createGroup = async (req, res) => {
       paymentReference,
     } = req.body;
     const { user_id, email } = req.user; // Assuming email is available in req.user
+    console.log("Request data:", {
+      livestock_id,
+      totalSlot,
+      slotTaken,
+      paymentMethod,
+      groupName,
+      paymentReference,
+      user_id,
+      email,
+    });
 
     // Validate slot count
     if (slotTaken > totalSlot) {
+      await t.rollback();
       return res
         .status(400)
         .json({ message: "Slot taken cannot be greater than total slot" });
@@ -359,15 +374,29 @@ const createGroup = async (req, res) => {
     // Check if livestock is available
     const livestock = await Livestocks.findOne({
       where: { livestock_id, available: true },
+      transaction: t,
     });
+    console.log("livestock:", livestock);
     if (!livestock) {
+      await t.rollback();
       return res.status(404).json({ message: "Livestock not available" });
     }
 
-    // Calculate slot price
+    // Calculate totalSlotLeft (initially equals totalSlot, then reduces by slotTaken)
+    const totalSlotLeft = totalSlot - slotTaken;
+    console.log("totalSlotLeft:", totalSlotLeft);
+
+    // Calculate slot price and total slot price
     const totalPrice = parseFloat(livestock.price);
+    console.log("totalPrice:", totalPrice);
     const slotPrice = Math.ceil(totalPrice / totalSlot);
+    console.log("slotPrice:", slotPrice);
     const finalSlotPrice = slotPrice * slotTaken;
+    console.log("finalSlotPrice:  ", finalSlotPrice);
+
+    // Calculate totalSlotPrice (price for remaining slots)
+    const totalSlotPrice = slotPrice * totalSlotLeft;
+    console.log("totalSlotPrice (for remaining slots):", totalSlotPrice);
 
     if (slotPrice <= 0) {
       return res.status(400).json({ message: "Invalid slot price" });
@@ -384,28 +413,34 @@ const createGroup = async (req, res) => {
         email,
         `Wallet Debit for ${groupName} purchase, ${slotTaken} slots`
       );
+      console.log("Wallet debit transactionRef:", transactionRef);
       if (!transactionRef) {
+        await t.rollback();
         return res.status(400).json({ message: "Insufficient balance" });
       }
       finalPaymentReference = transactionRef;
 
       // Save wallet transaction
-      await Transactions.create({
+      const transactionData = {
         transaction_id: uuidv4(),
         email,
         description: `Wallet Debit for ${groupName} purchase, ${slotTaken} slots`,
         transaction_type: "debit",
-        reference: finalPaymentReference,
+        payment_reference: finalPaymentReference,
         user_id,
         amount: finalSlotPrice,
         status: "success",
         payment_means: paymentMethod,
-      });
+      };
+      console.log("Creating wallet transaction with data:", transactionData);
+      await Transactions.create(transactionData, { transaction: t });
+      console.log("Wallet transaction saved successfully");
     } else if (paymentMethod === paymentMeans.OTHERS) {
       if (!paymentReference) {
         // Initialize new payment
-        const paymentResponse = await initailizePayment(email, finalSlotPrice);
+        const paymentResponse = await initializePayment(email, finalSlotPrice);
         const { authorization_url, reference } = paymentResponse.data.data;
+        await t.rollback();
 
         return res.status(200).json({
           message: "Payment initialization successful",
@@ -440,7 +475,7 @@ const createGroup = async (req, res) => {
       finalPaymentReference = paymentReference;
 
       // Save other transaction
-      await Transactions.create({
+      const transactionData = {
         transaction_id: uuidv4(),
         email,
         description: `Wallet Debit for ${groupName} purchase, ${slotTaken} slots`,
@@ -450,7 +485,10 @@ const createGroup = async (req, res) => {
         amount: finalSlotPrice,
         status: "success",
         payment_means: paymentMethod,
-      });
+      };
+      console.log("Creating other transaction with data:", transactionData);
+      await Transactions.create(transactionData, { transaction: t });
+      console.log("Other transaction saved successfully");
     } else {
       return res.status(400).json({ message: "Invalid payment method" });
     }
@@ -465,25 +503,43 @@ const createGroup = async (req, res) => {
     }
     */
 
+    // Generate unique group_id
+    const groupId = uuidv4();
+
     // Create the group
-    const newGroup = await CreateGroups.create({
-      livestock_id,
-      totalSlot,
-      slotTaken,
-      created_by: user_id,
-      paymentMethod,
-      paymentReference: finalPaymentReference,
-      slotPrice,
-      groupName,
-      status: slotTaken === totalSlot ? "completed" : "active",
-    });
-
-    // Update transaction with group_id (optional, for tracking)
-    await Transactions.update(
-      { group_id: newGroup.id },
-      { where: { reference: finalPaymentReference } }
+    const newGroup = await CreateGroups.create(
+      {
+        group_id: groupId,
+        livestock_id,
+        totalSlot,
+        slotTaken,
+        totalSlotLeft,
+        totalSlotPrice,
+        created_by: user_id,
+        paymentMethod,
+        paymentReference: finalPaymentReference,
+        slotPrice,
+        groupName,
+        status: slotTaken === totalSlot ? "completed" : "active",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { transaction: t }
     );
+    console.log("New group created:", newGroup);
 
+    // Update transaction with g  roup_id (optional, for tracking)
+    await Transactions.update(
+      {
+        group_id: groupId, // Add group_id to link transaction with group
+        updated_at: new Date().toISOString(),
+      },
+      {
+        where: { payment_reference: finalPaymentReference },
+        transaction: t,
+      }
+    );
+    await t.commit();
     return res.status(201).json({
       message: "Group created successfully",
       group: newGroup,
@@ -496,12 +552,194 @@ const createGroup = async (req, res) => {
   }
 };
 
+const joinGroup = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    // Validate request body
+    const { error, value } = joinGroupValidation(req.body);
+    if (error) {
+      await t.rollback();
+      return res.status(400).json({ message: error.details[0].message });
+    }
+
+    const { slots, paymentMethod, paymentReference } = req.body;
+    const { groupId } = req.params;
+    const { user_id, email } = req.user;
+    console.log("Request data:", {
+      groupId,
+      slots,
+      paymentMethod,
+      paymentReference,
+      user_id,
+      email,
+    });
+
+    // Check if group exists and is active
+    const group = await CreateGroups.findOne({
+      where: { group_id: groupId, status: "active" },
+      // include: [
+      //   { model: Livestocks, as: "livestock", where: { available: true } },
+      // ],
+      transaction: t,
+    });
+    if (!group) throw new Error("Group not found or not active");
+    const existingMember = await joinGroups.findOne({
+      where: { group_id: groupId, user_id },
+      transaction: t,
+    });
+    if (existingMember)
+      throw new Error("User is already a member of this group");
+    // Validate available slots
+    if (slots > group.totalSlotLeft)
+      throw new Error("Requested slots exceed available slots");
+
+    // Calculate payment amount
+    const finalSlotPrice = group.slotPrice * slots;
+    console.log("finalSlotPrice:", finalSlotPrice);
+
+    let finalPaymentReference = null;
+
+    // Handle payment method
+    if (paymentMethod === paymentMeans.WALLET) {
+      // Debit wallet
+      const transactionRef = await debitWallet(
+        finalSlotPrice,
+        user_id,
+        email,
+        `Wallet Debit for joining ${group.groupName}, ${slots} slots`
+      );
+      console.log("Wallet debit transactionRef:", transactionRef);
+      if (!transactionRef) {
+        await t.rollback();
+        return res.status(400).json({ message: "Insufficient balance" });
+      }
+      finalPaymentReference = transactionRef;
+
+      // Save wallet transaction
+      const transactionData = {
+        transaction_id: uuidv4(),
+        email,
+        description: `Wallet Debit for joining ${group.groupName}, ${slots} slots`,
+        transaction_type: "debit",
+        payment_reference: finalPaymentReference,
+        user_id,
+        amount: finalSlotPrice,
+        status: "success",
+        payment_means: paymentMethod,
+        group_id: groupId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      console.log("Creating wallet transaction with data:", transactionData);
+      await Transactions.create(transactionData, { transaction: t });
+      console.log("Wallet transaction saved successfully");
+    } else if (paymentMethod === paymentMeans.OTHERS) {
+      if (!paymentReference) {
+        // Initialize new payment
+        const paymentResponse = await initializePayment(email, finalSlotPrice);
+        const { authorization_url, reference } = paymentResponse.data.data;
+        await t.rollback();
+        return res.status(200).json({
+          message: "Payment initialization successful",
+          paymentLink: authorization_url,
+          paymentReference: reference,
+        });
+      }
+
+      // Verify existing payment reference
+      const existingTransaction = await checkTransactionStatus(
+        paymentReference
+      );
+      if (existingTransaction) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ message: "Payment reference already used" });
+      }
+
+      const verification = await verifyPayment(paymentReference);
+      if (verification.data.data.status !== "success") {
+        await t.rollback();
+        return res.status(400).json({ message: "Payment failed" });
+      }
+
+      finalPaymentReference = paymentReference;
+
+      // Save other transaction
+      const transactionData = {
+        transaction_id: uuidv4(),
+        email,
+        description: `Payment for joining ${group.groupName}, ${slots} slots`,
+        transaction_type: "debit",
+        payment_reference: finalPaymentReference,
+        user_id,
+        amount: finalSlotPrice,
+        status: "success",
+        payment_means: paymentMethod,
+        group_id: groupId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      console.log("Creating other transaction with data:", transactionData);
+      await Transactions.create(transactionData, { transaction: t });
+      console.log("Other transaction saved successfully");
+    } else {
+      await t.rollback();
+      return res.status(400).json({ message: "Invalid payment method" });
+    }
+
+    // Update group slots
+    const newSlotTaken = group.slotTaken + slots;
+    const newTotalSlotLeft = group.totalSlot - newSlotTaken;
+    const amountPaid =group.slotPrice * slots
+    const newTotalSlotPrice = group.totalSlotPrice - amountPaid
+    const newStatus = newTotalSlotLeft === 0 ? "completed" : "active";
+
+    await CreateGroups.update(
+      {
+        slotTaken: newSlotTaken,
+        totalSlotLeft: newTotalSlotLeft,
+        totalSlotPrice: newTotalSlotPrice,
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      },
+      { where: { group_id: groupId }, transaction: t }
+    );
+
+    // Add user to group
+    await joinGroups.create(
+      {
+        group_id: groupId,
+        user_id,
+        slots,
+        status: "approved",
+        payment_reference: finalPaymentReference,
+        joined_at: new Date().toISOString(),
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+    return res.status(200).json({
+      message: "Successfully joined group",
+      groupId,
+      slots,
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error("Error in joinGroup:", error);
+    return res.status(500).json({
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
 const startWalletFunding = async (req, res) => {
   try {
     const { email, user_id } = req.user; // passed from the auth
     const { amount } = req.body;
     if (amount < 1000) throw new Error("Amount must be greater than 1000");
-    const response = await initailizePayment(email, amount);
+    const response = await initializePayment(email, amount);
 
     res.status(200).json({
       status: "success",
@@ -562,8 +800,14 @@ const completWalletFunding = async (req, res) => {
         { transaction: t }
       );
       const updateAmount =
-        Number(getWallet.balance) + response.data.data.amount / NAIRA_CONVERSION;
-        console.log("Updating wallet balance to:", updateAmount, "for user_id:", user_id);
+        Number(getWallet.balance) +
+        response.data.data.amount / NAIRA_CONVERSION;
+      console.log(
+        "Updating wallet balance to:",
+        updateAmount,
+        "for user_id:",
+        user_id
+      );
       await Wallets.update(
         { balance: updateAmount },
         { where: { user_id: user_id } },
@@ -636,4 +880,5 @@ module.exports = {
   startWalletFunding,
   completWalletFunding,
   createLivestock,
+  joinGroup,
 };

@@ -30,7 +30,12 @@ const createGroupValidation = (data) => {
     livestock_id: Joi.string().required(),
     paymentMethod: Joi.string().valid("wallet", "others").required(),
     totalSlot: Joi.number().integer().min(1).positive().required(),
-    slotTaken: Joi.number().integer().min(0).max(Joi.ref('totalSlot')).positive().required(),
+    slotTaken: Joi.number()
+      .integer()
+      .min(0)
+      .max(Joi.ref("totalSlot"))
+      .positive()
+      .required(),
     paymentReference: Joi.string().optional(),
   });
   return groupSchema.validate(data);
@@ -50,9 +55,23 @@ const createLivestockValidation = (data) => {
   return livestockSchema.validate(data);
 };
 
+const joinGroupValidation = (data) => {
+  const joinSchema = Joi.object({
+    slots: Joi.number().integer().min(1).required(),
+    paymentMethod: Joi.string().valid("wallet", "others").required(),
+    paymentReference: Joi.string().when("paymentMethod", {
+      is: "others",
+      then: Joi.string().optional().allow(""),
+      otherwise: Joi.forbidden(),
+    }),
+  });
+  return joinSchema.validate(data);
+};
+
 module.exports = {
   createUserValidation,
   updateUserValidation,
   createGroupValidation,
   createLivestockValidation,
+  joinGroupValidation,
 };

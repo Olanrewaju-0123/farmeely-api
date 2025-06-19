@@ -9,20 +9,25 @@ const CreateGroups = sequelize.define(
       primaryKey: true,
       autoIncrement: true,
     },
+    group_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+    },
     livestock_id: {
       type: DataTypes.STRING,
       allowNull: false,
       references: {
-        model: 'Livestocks',
-        key: 'livestock_id',
+        model: "Livestock",
+        key: "livestock_id",
       },
     },
     created_by: {
       type: DataTypes.STRING,
       allowNull: false,
-      references:{
-        model: 'Users',
-        key:'user_id',
+      references: {
+        model: "Users",
+        key: "user_id",
       },
     },
     totalSlot: {
@@ -35,6 +40,15 @@ const CreateGroups = sequelize.define(
     },
     slotPrice: {
       type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    totalSlotLeft: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    totalSlotPrice: {
+      type: DataTypes.FLOAT,
       allowNull: false,
     },
     paymentReference: {
@@ -50,7 +64,7 @@ const CreateGroups = sequelize.define(
       type: DataTypes.ENUM("wallet", "others"),
       allowNull: false,
     },
-    groupName:{
+    groupName: {
       type: DataTypes.STRING,
       allowNull: false,
     },

@@ -9,6 +9,7 @@ const {
   getAvailableLivestocks,
   getSingleLivestock,
   createGroup,
+  joinGroup,
   startWalletFunding,
   completWalletFunding,
   createLivestock
@@ -28,6 +29,8 @@ router.get("/livestocks", authorization, getAvailableLivestocks);
 router.get('/livestock', getSingleLivestock)
 
 router.post("/groups", authorization, createGroup)
+
+router.post("/groups/:groupId/join", authorization, joinGroup)
 
 // create a new livestock entry (Admin)
 router.post('/livestock', authorization, createLivestock)

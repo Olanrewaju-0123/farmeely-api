@@ -1,7 +1,7 @@
 const axios = require("axios");
 const TO_KOBO = 100;
 
-const initailizePayment = async (email, amount) => {
+const initializePayment = async (email, amount) => {
   return await axios({
     method: "post",
     url: "https://api.paystack.co/transaction/initialize",
@@ -26,6 +26,6 @@ const verifyPayment = async (reference) => {
 };
 
 module.exports = {
-  initailizePayment,
+  initializePayment,
   verifyPayment,
 };
