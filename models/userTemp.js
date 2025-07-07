@@ -54,11 +54,13 @@ const TemporaryUsers = sequelize.define(
     },
     created_at: {
       type: DataTypes.DATE,
-      allowNull: true,
+      allowNull: false,
+      defaultValue: Sequelize.NOW,
     },
     updated_at: {
       type: DataTypes.DATE,
-      allowNull: true,
+      allowNull: false,
+      defaultValue: Sequelize.NOW,
     },
   },
   {

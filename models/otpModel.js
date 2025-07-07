@@ -22,13 +22,19 @@ const Otps = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
+    expires_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+    },
     created_at: {
       type: DataTypes.DATE,
-      allowNull: true,
+      allowNull: false,
+      defaultValue: Sequelize.NOW,
     },
     updated_at: {
       type: DataTypes.DATE,
-      allowNull: true,
+      allowNull: false,
+      defaultValue: Sequelize.NOW,
     },
   },
   {

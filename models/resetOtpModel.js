@@ -1,8 +1,8 @@
 const { Sequelize, DataTypes } = require("sequelize");
 const sequelize = require("../config/sequelize");
 
-const Livestocks = sequelize.define(
-  "livestock",
+const ResetOtps = sequelize.define(
+  "ResetOtp",
   {
     sn: {
       type: DataTypes.INTEGER,
@@ -10,34 +10,21 @@ const Livestocks = sequelize.define(
       autoIncrement: true,
       allowNull: false,
     },
-    livestock_id:{
+    email: {
       type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
+      references: {
+        model: "users", // real users table
+        key: "email",
+      },
     },
-    name: {
+    otp: {
       type: DataTypes.STRING,
       allowNull: false,
     },
-    breed: {
-      type: DataTypes.STRING,
-    },
-    weight: {
-      type: DataTypes.FLOAT,
-    },
-    price: {
-      type: DataTypes.FLOAT,
+    expires_at: {
+      type: DataTypes.DATE,
       allowNull: false,
-    },
-    imageUrl: {
-      type: DataTypes.STRING,
-    },
-    description: {
-      type: DataTypes.TEXT,
-    },
-    available: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
     },
     created_at: {
       type: DataTypes.DATE,
@@ -54,8 +41,6 @@ const Livestocks = sequelize.define(
     timestamps: false,
     createdAt: false,
     updatedAt: false,
-    tableName: 'Livestock',
   }
 );
-
-module.exports = { Livestocks };
+module.exports = { ResetOtps };
