@@ -1,5 +1,6 @@
 const { Sequelize, DataTypes } = require("sequelize");
 const sequelize = require("../config/sequelize");
+const { Users } = require("./userModel");
 
 const joinGroups = sequelize.define(
   "JoinGroup",
@@ -32,7 +33,7 @@ const joinGroups = sequelize.define(
     },
     status: {
       type: DataTypes.ENUM("pending", "approved"),
-      defaultValue: "approved",
+      defaultValue: "pending",
     },
     payment_reference: {
       type: DataTypes.STRING(255),
@@ -60,5 +61,8 @@ const joinGroups = sequelize.define(
     updatedAt: false,
   }
 );
+
+// Define associations
+// joinGroups.belongsTo(Users, { foreignKey: "user_id", targetKey: "user_id", as: "user" })
 
 module.exports = { joinGroups };

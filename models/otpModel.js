@@ -1,7 +1,7 @@
 const { Sequelize, DataTypes } = require("sequelize");
 const sequelize = require("../config/sequelize");
 
-const Otps = sequelize.define(
+const Otp = sequelize.define(
   "Otp",
   {
     sn: {
@@ -38,10 +38,11 @@ const Otps = sequelize.define(
     },
   },
   {
+    tableName: "Otps",
     timestamps: false,
     createdAt: false,
     updatedAt: false,
   }
 );
 
-module.exports = { Otps };
+module.exports = { Otp };

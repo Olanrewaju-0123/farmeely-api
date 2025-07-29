@@ -1,5 +1,7 @@
 const { Sequelize, DataTypes } = require("sequelize");
 const sequelize = require("../config/sequelize");
+const { Livestocks } = require("./livestockModel");
+
 
 const CreateGroups = sequelize.define(
   "createGroup",
@@ -47,7 +49,11 @@ const CreateGroups = sequelize.define(
       allowNull: false,
       defaultValue: 0,
     },
-    totalSlotPrice: {
+    totalSlotPriceLeft: {
+      type: DataTypes.FLOAT,
+      allowNull: false,
+    },
+    finalSlotPriceTaken: {
       type: DataTypes.FLOAT,
       allowNull: false,
     },
@@ -56,9 +62,13 @@ const CreateGroups = sequelize.define(
       allowNull: true,
       unique: true,
     },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
     status: {
-      type: DataTypes.ENUM("active", "completed", "cancelled"),
-      defaultValue: "active",
+      type: DataTypes.ENUM("pending", "active", "completed", "cancelled"),
+      defaultValue: "pending",
     },
     paymentMethod: {
       type: DataTypes.ENUM("wallet", "others"),
@@ -86,4 +96,6 @@ const CreateGroups = sequelize.define(
   }
 );
 
+// Define associations
+// CreateGroups.belongsTo(Livestocks, { foreignKey: "livestock_id", targetKey: "livestock_id", as: "livestock" })
 module.exports = { CreateGroups };

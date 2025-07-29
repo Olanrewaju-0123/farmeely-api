@@ -1,8 +1,8 @@
 const { Sequelize, DataTypes } = require("sequelize");
 const sequelize = require("../config/sequelize");
 
-const TemporaryUsers = sequelize.define(
-  "TemporaryUser",
+const UserTemp = sequelize.define(
+  "UserTemp",
   {
     sn: {
       type: DataTypes.INTEGER,
@@ -64,10 +64,11 @@ const TemporaryUsers = sequelize.define(
     },
   },
   {
+    tableName: "TemporaryUser",
     timestamps: false,
     createdAt: false,
     updatedAt: false,
   }
 );
 
-module.exports = { TemporaryUsers };
+module.exports = { UserTemp };

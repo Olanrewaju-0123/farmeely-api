@@ -10,7 +10,7 @@ const Livestocks = sequelize.define(
       autoIncrement: true,
       allowNull: false,
     },
-    livestock_id:{
+    livestock_id: {
       type: DataTypes.STRING,
       allowNull: false,
       unique: true,
@@ -39,6 +39,10 @@ const Livestocks = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
+    minimum_amount: {
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0.0,
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
@@ -54,7 +58,7 @@ const Livestocks = sequelize.define(
     timestamps: false,
     createdAt: false,
     updatedAt: false,
-    tableName: 'Livestock',
+    tableName: "Livestock",
   }
 );
 

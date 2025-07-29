@@ -5,7 +5,10 @@ const saltRounds = 10;
 const { v4: uuidv4 } = require("uuid");
 const sequelize = require("../config/sequelize");
 const { Transactions } = require("../models/transactionModel");
-const { initializePayment, verifyPayment  } = require("../services/paymentGateway");
+const {
+  initializePayment,
+  verifyPayment,
+} = require("../services/paymentGateway");
 
 const hashPassword = async (password) => {
   return new Promise((resolve, reject) => {
@@ -25,11 +28,10 @@ const hashPassword = async (password) => {
 // };
 
 const generateOtp = (minutes = 10) => {
-  const otp = Math.floor(Math.random() * 900000) + 100000; 
+  const otp = Math.floor(Math.random() * 900000) + 100000;
   const expiresAt = new Date(Date.now() + minutes * 60000);
   return { otp, expiresAt };
 };
-
 
 const debitWallet = async (amount, user_id, email, description) => {
   try {
@@ -118,9 +120,9 @@ const startTransaction = async ({
   email,
   paymentMethod,
   description,
-  paymentReference
+  paymentReference,
 }) => {
-  if (paymentMethod === paymentMeans.WALLET) { 
+  if (paymentMethod === paymentMeans.WALLET) {
     const transactionRef = await debitWallet(
       amount,
       user_id,
@@ -128,16 +130,20 @@ const startTransaction = async ({
       description
     );
     if (!transactionRef) throw new Error("Insufficient wallet balance");
-    return { paymentReference: transactionRef }; 
+    return { paymentReference: transactionRef };
   } else if (paymentMethod === paymentMeans.OTHERS) {
     if (paymentReference) {
       // Verify existing payment
-      const existingTransaction = await checkTransactionStatus(paymentReference);
-      if (existingTransaction) throw new Error("Payment reference already used");
-      
+      const existingTransaction = await checkTransactionStatus(
+        paymentReference
+      );
+      if (existingTransaction)
+        throw new Error("Payment reference already used");
+
       const verification = await verifyPayment(paymentReference);
-      if (verification.data.data.status !== "success") throw new Error("Payment verification failed");
-      
+      if (verification.data.data.status !== "success")
+        throw new Error("Payment verification failed");
+
       return { paymentReference };
     } else {
       // Initialize new payment
@@ -157,7 +163,6 @@ const completeTransaction = async ({ sequelizeTransaction, success }) => {
   }
 };
 
-
 module.exports = {
   hashPassword,
   generateOtp,
@@ -165,5 +170,5 @@ module.exports = {
   creditWallet,
   checkTransactionStatus,
   startTransaction,
-  completeTransaction
+  completeTransaction,
 };

@@ -1,7 +1,7 @@
 const { Sequelize, DataTypes } = require("sequelize");
 const sequelize = require("../config/sequelize");
 
-const ResetOtps = sequelize.define(
+const ResetOtp = sequelize.define(
   "ResetOtp",
   {
     sn: {
@@ -38,9 +38,10 @@ const ResetOtps = sequelize.define(
     },
   },
   {
+    tableName: "ResetOtps",
     timestamps: false,
     createdAt: false,
     updatedAt: false,
   }
 );
-module.exports = { ResetOtps };
+module.exports = { ResetOtp };
