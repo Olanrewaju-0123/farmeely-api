@@ -413,6 +413,7 @@ const getActiveGroups = async (req, res) => {
           ],
         },
       ],
+      order:[["created_at", "DESC"]]
     });
 
     // Calculate progress for each group
@@ -463,7 +464,7 @@ const getMyGroups = async (req, res) => {
             "totalSlotLeft",
             "totalSlotPriceLeft",
             "status",
-            "creatorInitialSlots",
+            // "creatorInitialSlots",
           ],
           include: [
             {
@@ -537,6 +538,11 @@ const getGroupDetails = async (req, res) => {
     const { groupId } = req.params
     const group = await CreateGroups.findOne({
       where: { group_id: groupId },
+      attributes: {
+        include: [
+          ["slotTaken", "creatorInitialSlot"] // alias slotTaken for frontend
+        ]
+      },
       include: [
         {
           model: Livestocks,
@@ -576,7 +582,7 @@ const getGroupDetails = async (req, res) => {
     })
   } catch (error) {
     console.error("Error in getGroupDetails:", error)
-    res.status(500).json({
+    res.status(400).json({
       status: "error",
       message: error.message,
     })
@@ -585,8 +591,25 @@ const getGroupDetails = async (req, res) => {
 
 const startCreateGroup = async (req, res) => {
   try {
+    console.log("=== START CREATE GROUP DEBUG ===");
+    console.log("Request headers:", req.headers);
+    console.log("Request body:", req.body);
+    console.log("Request body type:", typeof req.body);
+    console.log("User from middleware:", req.user);
+    console.log("===========================");
+
+    if (!req.body || typeof req.body !== 'object') {
+      throw new Error("Invalid request body format");
+    }
+
+    // Validate the request body
     const { error } = createGroupValidation(req.body);
-    if (error) throw new Error(error.details[0].message);
+    if (error) {
+      console.log("Validation error:", error.details[0].message);
+      throw new Error(error.details[0].message);
+    }
+
+    console.log("Validation passed successfully");
 
     const {
       livestock_id,
@@ -594,39 +617,68 @@ const startCreateGroup = async (req, res) => {
       slotPrice,
       description,
       groupName,
-      creatorInitialSlots,
-    } = req.body; // Removed paymentMethod from here
+      slotTaken,
+    } = req.body;
+
+    // Validate required fields
+    if (!livestock_id) throw new Error("livestock_id is required");
+    if (!totalSlot) throw new Error("totalSlot is required");
+    if (!slotPrice) throw new Error("slotPrice is required");
+    if (!groupName) throw new Error("groupName is required");
+    if (!slotTaken) throw new Error("slotTaken is required");
+
+    console.log("Extracted fields:", {
+      livestock_id,
+      totalSlot,
+      slotPrice,
+      groupName,
+      slotTaken
+    });
+
     const { user_id, email } = req.user;
+    console.log("User info:", { user_id, email });
+
+    // Find the livestock
     const livestock = await Livestocks.findOne({ where: { livestock_id } });
     if (!livestock) throw new Error("Livestock not found");
 
+    console.log("Found livestock:", livestock.toJSON());
+
     // Validate creatorInitialSlots
-    if (creatorInitialSlots <= 0 || creatorInitialSlots > totalSlot)
+    if (slotTaken <= 0 || slotTaken > totalSlot) {
       throw new Error("Invalid number of initial slots for creator");
+    }
+
+    // Validate numeric fields
+    if (!Number.isInteger(Number(totalSlot)) || totalSlot <= 0) {
+      throw new Error("Total slots must be a positive integer");
+    }
+    if (!Number.isFinite(Number(slotPrice)) || slotPrice <= 0) {
+      throw new Error("Slot price must be a positive number");
+    }
+
+    const livestockForeignKey = livestock.livestock_id || livestock.id;
+    console.log("Using livestock foreign key:", livestockForeignKey);
 
     const newGroup = await CreateGroups.create({
       group_id: uuidv4(),
-      livestock_id: livestock.sn,
+      livestock_id: livestockForeignKey,
       created_by: user_id,
-      totalSlot,
-      slotPrice,
-      totalSlotLeft: totalSlot,
-      totalSlotPriceLeft: totalSlot * slotPrice,
-      description,
+      totalSlot: Number(totalSlot),
+      slotPrice: Number(slotPrice),
+      totalSlotLeft: Number(totalSlot) - Number(slotTaken),
+      totalSlotPriceLeft: Number(totalSlot) * Number(slotPrice),
+      description: description || '',
       groupName,
       status: "pending",
-      slotTaken: 0,
-      finalSlotPriceTaken: 0,
+      slotTaken: slotTaken,
+      finalSlotPriceTaken: slotPrice * slotTaken,
       paymentReference: null,
-      paymentMethod: null,
-      creatorInitialSlots: creatorInitialSlots,
+      paymentMethod: "wallet",
+      // creatorInitialSlots: Number(creatorInitialSlots),
     });
 
-    // const livestockPrice = Number.parseFloat(livestock.price)
-    // const livestockMinimumAmount = Number.parseFloat(livestock.minimum_amount)
-    // const AvailableSlotDivisible = livestockPrice/livestockMinimumAmount
-    // const totalSlotLeft = totalSlot;
-    // const totalSlotPriceLeft = totalSlot * slotPrice;
+    console.log("Created group successfully:", newGroup.toJSON());
 
     res.status(200).json({
       status: "success",
@@ -636,9 +688,14 @@ const startCreateGroup = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("=== CREATE GROUP ERROR ===");
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    console.error("========================");
+    
     res.status(400).json({
       status: "error",
-      message: "Server error creating groip draft",
+      message: error.message || "Server error creating group draft",
     });
   }
 };
@@ -664,8 +721,8 @@ const completeCreateGroup = async (req, res) => {
     if (group.status !== "pending") {
       throw new Error("Group is already active or completed.")
     }
-
     const creatorPaymentAmount = group.slotPrice * group.creatorInitialSlots
+    console.log("creatorPaymentAmount:", creatorPaymentAmount, typeof creatorPaymentAmount);
 
     let finalPaymentRef = paymentReference
 
@@ -771,8 +828,8 @@ const completeCreateGroup = async (req, res) => {
 
     // Update group status and slots
     group.status = "active"
-    group.slotTaken = group.creatorInitialSlots
-    group.totalSlotLeft = group.totalSlot - group.creatorInitialSlots
+    group.slotTaken = group.slotTaken
+    group.totalSlotLeft = group.totalSlot - group.slotTaken
     group.finalSlotPriceTaken = creatorPaymentAmount
     group.totalSlotPriceLeft = group.totalSlot * group.slotPrice - creatorPaymentAmount
     group.paymentReference = finalPaymentRef
@@ -785,7 +842,7 @@ const completeCreateGroup = async (req, res) => {
         join_id: uuidv4(),
         group_id: group.group_id,
         user_id: user_id,
-        slots: group.creatorInitialSlots,
+        slots: group.slotTaken,
         status: "approved",
         payment_reference: finalPaymentRef,
         joined_at: new Date(),
@@ -1175,7 +1232,7 @@ const getWalletTransactions = async (req, res) => {
 
     const transactions = await Transactions.findAll({
       where: { wallet_id: wallet.wallet_id },
-      order: [["createdAt", "DESC"]],
+      order: [["created_at", "DESC"]],
     })
 
     res.status(200).json({
@@ -1232,6 +1289,163 @@ const createLivestock = async (req, res) => {
   }
 };
 
+const getMyCreatedGroups = async (req, res) => {
+  try {
+    const { user_id } = req.user
+
+    console.log("Backend: getMyCreatedGroups - Fetching groups created by user_id:", user_id)
+
+    const createdGroups = await CreateGroups.findAll({
+      where: { created_by: user_id },
+      include: [
+        {
+          model: Livestocks,
+          as: "livestock",
+          attributes: ["livestock_id", "name", "price", "minimum_amount", "imageUrl"],
+        },
+      ],
+      order: [["created_at", "DESC"]], // Show newest first
+    })
+
+    console.log("Backend: getMyCreatedGroups - Found groups:", createdGroups.length)
+
+    // Calculate progress for each group
+    const formattedGroups = createdGroups.map((group) => {
+      const progress = group.totalSlot > 0 ? (group.slotTaken / group.totalSlot) * 100 : 0
+      return {
+        ...group.toJSON(),
+        progress: progress,
+      }
+    })
+
+    res.status(200).json({
+      status: "success",
+      message: "Created groups retrieved successfully",
+      data: formattedGroups,
+    })
+  } catch (error) {
+    console.error("Error in getMyCreatedGroups:", error.message, error.stack)
+    res.status(500).json({
+      status: "error",
+      message: error.message,
+    })
+  }
+}
+
+// Get groups the user has joined (not created)
+const getMyJoinedGroups = async (req, res) => {
+  try {
+    const { user_id } = req.user
+
+    console.log("Backend: getMyJoinedGroups - Fetching joined groups for user_id:", user_id)
+
+    const userParticipations = await joinGroups.findAll({
+      where: { user_id: user_id },
+      include: [
+        {
+          model: CreateGroups,
+          as: "group",
+          where: {
+            created_by: { [require("sequelize").Op.ne]: user_id }, // Exclude groups created by the user
+            status: "active", // Only show active groups
+          },
+          attributes: [
+            "group_id",
+            "groupName",
+            "description",
+            "totalSlot",
+            "slotTaken",
+            "slotPrice",
+            "finalSlotPriceTaken",
+            "totalSlotLeft",
+            "totalSlotPriceLeft",
+            "status",
+            "created_by",
+          ],
+          include: [
+            {
+              model: Livestocks,
+              as: "livestock",
+              attributes: ["livestock_id", "name", "price", "minimum_amount", "imageUrl"],
+            },
+          ],
+        },
+      ],
+    })
+
+    console.log("Backend: getMyJoinedGroups - Found participations:", userParticipations.length)
+
+    // Format data and calculate progress
+    const formattedParticipations = userParticipations
+      .map((participation) => {
+        const group = participation.group
+        if (!group) {
+          return null
+        }
+        const progress = (group.slotTaken / group.totalSlot) * 100
+        return {
+          ...group.toJSON(),
+          progress: progress,
+          userSlots: participation.slots, // Add user's slot count
+          joinedAt: participation.joined_at,
+        }
+      })
+      .filter(Boolean)
+
+    res.status(200).json({
+      status: "success",
+      message: "Joined groups retrieved successfully",
+      data: formattedParticipations,
+    })
+  } catch (error) {
+    console.error("Error in getMyJoinedGroups:", error.message, error.stack)
+    res.status(400).json({
+      status: "error",
+      message: error.message,
+    })
+  }
+}
+
+const deleteGroup =async(req, res) => {
+  try{
+    const { groupId } = req.params;
+    const userId = req.user.id;
+    const group = await CreateGroups.findById(groupId);
+    if(!group) {
+
+      throw new Error ("Group not found")
+    }
+    if (group.created_by !== userId){
+      throw new Error ('You do not have permission to delete this group')
+    }
+
+    if (group.status === 'pending' || group.status === 'draft') {
+       await CreateGroups.findByIdAndDelete(groupId);
+       return true
+    } else if(group.status === "active") {
+      const memberCount = await joinGroups.countDocuments({ groupId: groupId });
+      
+      if (memberCount > 1) {
+        throw new Error ('Cannot delete group with active members. Please remove all members first.')
+      }
+    }
+
+    return res.status(200).json({
+        status: 'success',
+        message: 'Group deleted successfully'
+      });
+
+
+  } catch (error){
+    console.error('Error deleting group:', error);
+    return res.status(400).json({
+      status: 'error',
+      message: 'Internal server error while deleting group'
+    });
+
+  }
+}
+
 module.exports = {
   createUser,
   verifyEmail,
@@ -1254,4 +1468,15 @@ module.exports = {
   getMyGroups,
   getActiveGroups,
   getGroupDetails,
+  getMyCreatedGroups,
+  getMyJoinedGroups,
+  deleteGroup
 };
+
+
+
+
+
+
+
+

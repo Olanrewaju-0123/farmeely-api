@@ -39,7 +39,7 @@ const CreateGroups = sequelize.define(
     slotTaken: {
       type: DataTypes.INTEGER,
       defaultValue: 1,
-    },
+    },         
     slotPrice: {
       type: DataTypes.INTEGER,
       allowNull: false,

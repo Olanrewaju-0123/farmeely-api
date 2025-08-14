@@ -26,6 +26,9 @@ const {
   getMyGroups,
   getWalletTransactions,
   getGroupDetails,
+  getMyCreatedGroups,
+  getMyJoinedGroups,
+  deleteGroup
 } = require("../controllers/userCtrl");
 const { authorization } = require("../middleware/authorisation");
 
@@ -75,5 +78,13 @@ router.post(
 );
 
 router.get("/groups/:groupId", authorization, getGroupDetails);
+
+// Get groups created by the current user
+router.get("/my-created", authorization, getMyCreatedGroups)
+
+// Get groups the user has joined
+router.get("/my-joined", authorization, getMyJoinedGroups)
+
+router.delete('/groups/:groupId', authorization, deleteGroup);
 
 module.exports = router;

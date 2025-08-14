@@ -8,7 +8,7 @@ const authorization = (req, res, next) => {
     const authHeader = req.headers.authorization
 
     // Check if the header exists and starts with 'Bearer '
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader || !authHeader.startsWith("Bearer")) {
       throw new Error("Unauthorised Access: No Bearer token provided")
     }
 

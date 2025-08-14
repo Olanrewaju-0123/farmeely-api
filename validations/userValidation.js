@@ -31,11 +31,10 @@ const createGroupValidation = (data) => {
     description: Joi.string().min(10).required(),
     livestock_id: Joi.string().required(),
     slotPrice: Joi.number().integer().min(1).positive().required(),
-    totalSlot: Joi.number().integer().min(1).positive().required(),
     // paymentMethod: Joi.string().valid("wallet", "others").required(),
     totalSlot: Joi.number().integer().min(1).positive().required(),
     // paymentReference: Joi.string().optional(),
-    creatorInitialSlots: Joi.number().integer().min(1).required(),
+    slotTaken: Joi.number().integer().min(1).required(),
   });
    
   return groupSchema.validate(data);
